@@ -1,0 +1,106 @@
+version: "3"
+
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      budibase_net: {}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  proxy-service:
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.budibase.entrypoints: websecure
+      traefik.http.routers.budibase.rule: Host(`${DOMAIN}`)
+      traefik.http.routers.budibase.tls: "true"
+      traefik.http.routers.budibase.tls.certresolver: dns
+      traefik.http.services.budibase.loadbalancer.server.port: ${MAIN_PORT}
+    networks:
+      budibase_net: {}
+
+  traefik:
+    command:
+    - --accessLog=true
+    - --api.insecure=false
+    - --api.dashboard=true
+    - --api.debug=false
+    - --certificatesResolvers.dns.acme.dnsChallenge.provider=${ACME_PROVIDER}
+    - --certificatesResolvers.dns.acme.email=${CF_API_EMAIL}
+    - --certificatesResolvers.dns.acme.storage=/acme/acme.json
+    - --entrypoints.web.address=:80
+    - --entrypoints.websecure.address=:443
+    - --entrypoints.web.http.redirections.entryPoint.to=websecure
+    - --entrypoints.web.http.redirections.entryPoint.scheme=https
+    - --entrypoints.web.http.redirections.entrypoint.permanent=true
+    - --log.level=ERROR
+    - --providers.docker=true
+    - --providers.docker.endpoint=unix:///var/run/docker.sock
+    - --providers.docker.exposedbydefault=false
+    - --providers.docker.network=budibase_net
+    environment:
+      CF_API_EMAIL: ${CF_API_EMAIL}
+      CF_API_KEY: ${CF_API_KEY}
+    image: traefik:2.9
+    labels:
+      traefik.enable: "true"
+      traefik.http.middlewares.traefik-auth.basicauth.users: ${TRAEFIK_BASICAUTH}
+      traefik.http.routers.traefik.entrypoints: websecure
+      traefik.http.routers.traefik.middlewares: traefik-auth
+      traefik.http.routers.traefik.rule: Host(`${SUBDOMAIN_TRAEFIK}.${DOMAIN}`)
+      traefik.http.routers.traefik.service: api@internal
+      traefik.http.routers.traefik.tls: "true"
+      traefik.http.routers.traefik.tls.certresolver: dns
+      traefik.http.services.traefik.loadbalancer.server.port: 8080
+    networks:
+      budibase_net: {}
+    ports:
+    - published: 80
+      target: 80
+    - published: 443
+      target: 443
+    restart: unless-stopped
+    volumes:
+    - ${HOME}/budibase/acme:/acme:rw
+    - /var/run/docker.sock:/var/run/docker.sock:rw
+
+  app-service:
+    networks:
+      budibase_net: {}
+
+  worker-service:
+    networks:
+      budibase_net: {}
+
+  minio-service:
+    networks:
+      budibase_net: {}
+
+  couchdb-service:
+    networks:
+      budibase_net: {}
+
+  couch-init:
+    networks:
+      budibase_net: {}
+
+  redis-service:
+    networks:
+      budibase_net: {}
+
+  watchtower-service:
+    networks:
+      budibase_net: {}
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  budibase_net:
